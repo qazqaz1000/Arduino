@@ -393,10 +393,10 @@ void checkFirebase(){
       Serial.print("send : ");
       Serial.println(f_type);   
       digitalWrite(D2, HIGH);
-      writeMAC(1);
-      showMAC();
       
-      if(f_type.substring(4,8) == "SAFE"){
+      if(f_type.substring(4,8) == "SAFE"){        
+        writeMAC(1);
+        showMAC();
         isEnroll = true;
         String req = "";
         req = "REQ:S:OPEN,";
@@ -404,6 +404,10 @@ void checkFirebase(){
         req += "\n";
         Serial.print(req);
         swSerial.print(req);
+      }
+      else{
+        writeMAC(0);
+        showMAC();        
       }
       delay(2000);
       digitalWrite(D2, LOW);
@@ -431,6 +435,7 @@ void checkFirebase(){
     
   }
 }
+/* Firebase의 device 정보를 eeprom에 write */
 void writeMAC(int index){
   uint8_t blank=0;
     for (int i = 0; i < 16*MAC_max; i++) { EEPROM.write(96 + i, blank); }
@@ -441,7 +446,7 @@ void writeMAC(int index){
         if(index == 1){
           Serial.println("+" +n+" : "+f_mac);
           for (int j = 0; j < f_mac.length(); j++) { EEPROM.write(96 + j + (16*i), f_mac[j]); }   //추가할 mac 저장
-        }        
+        }
         break;
       }
       Serial.println(n+" : "+mac);                
@@ -449,6 +454,7 @@ void writeMAC(int index){
     }
     EEPROM.commit();
 }
+/* eeprom의 mac주소들 출력 */
 void showMAC(){
   char temp[16] = {0, };
   Serial.println("===show mac===");
