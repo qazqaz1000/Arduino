@@ -32,6 +32,8 @@ String getTime();
 void flipD1();
 void flipD2();
 void flipD1D2();
+void showMAC();
+void writeMAC(int index);
 
 String tagString[10];
 String receive_MAC = "";
@@ -40,8 +42,11 @@ SoftwareSerial swSerial(14, 12, false, 256); //for serial print
 
 char e_isReset[32]={0,};
 int isReset=0;
+bool isEnroll = false;
 int resetCount=0;       //reset pushed count
 int checkClient=0;
+const int MAC_max = 20;
+
 String f_message = "";
 String f_timestamp_past= "";
 String f_timestamp_curr= "";
@@ -100,21 +105,6 @@ void setup() {
  digitalWrite(D1, HIGH);
   Serial.println(F("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"));
 
-//  String text = "REQ:S:OPEN,0123456789AB";
-//  Serial.print(text.find(','));
-// while(Serial.available()) {
-//    char inchar = Serial.read();
-//    text+=inchar;
-//    index_Enter++;
-//    if(inchar == ','){  // find ',' 
-//      index_Comma = index_Enter;
-//    }
-//    
-//    if(inchar == '\n'){
-//      sendIOT = true;
-//      break;
-//    }
-//  }
   
 }
 
@@ -129,12 +119,23 @@ void loop() {
   //if first enroll AP+STA
   if(isReset!=0){     
     checkClient = testcheckClient();
+//          String p_ssid = "goldsu";
+//          String p_pass = "12345678";
+//          String p_isReset = "false";
+//          Serial.println(p_ssid);
+//          Serial.println(p_pass);
+//          for (int i = 0; i < p_ssid.length(); i++) { EEPROM.write( 0 + i, p_ssid[i]); }    
+//          for (int i = 0; i < p_pass.length(); i++) { EEPROM.write(32 + i, p_pass[i]); }
+//          for (int i = 0; i < p_isReset.length(); i++) { EEPROM.write(64 + i, p_isReset[i]); }
+//          checkClient = 1;
+//          EEPROM.commit();
     if(checkClient){      
       flipper.attach(0.2, flipD1);
       br_station_read_eeprom();
       connectWifi();
       isReset=0;                    // escape
-      sendFirebase(7);
+//      sendFirebase(7);
+              
       flipper.detach();
       digitalWrite(D1, HIGH);
       delay(100);
@@ -148,24 +149,28 @@ void loop() {
         connectWifi();
         flipper.detach();
         digitalWrite(D1, HIGH); 
+
       }
       sendFirebase(brBleMsgParse_MAC(&receive_MAC));
-      
+//      static int liveCount = 0;
+      static unsigned long liveCount = millis();
       static unsigned long tick = millis();
-      if ( ( millis() - tick) > 100 )
+      if ( ( millis() - tick) > 1000 )
       {
-//        String aa = Firebase.getString("/userlogs/MAC/MAC1");
-//        Serial.println(aa);
-        checkFirebase();
         tick = millis();
-//        time_t now = time("mm:ss");
-//        Serial.println(ctime(&now));
+        checkFirebase();
+
       }
-      
+      if ( ( millis() - liveCount) > 2600 )
+      {
+        liveCount = millis();
+        Firebase.setString("/devicelog/bridgeid/livecheck", getTime() );
+        if (Firebase.failed()) {
+          Serial.print("\nFirebase livecheck  failed:");
+          Serial.println(Firebase.error());           
+        }
+      }
   }
-
-
- 
   checkReset();  
 
   delay(10);
@@ -190,9 +195,30 @@ void connectWifi(){
   
   Serial.println("wifi connect success !");
   firebaseSetup();
+
+  /* livecheck */
+  Firebase.setString("/devicelog/bridgeid/livecheck", getTime() ); 
+  if (Firebase.failed()) {
+    Serial.print("\nFirebase livecheck  failed:");
+    Serial.println(Firebase.error());           
+  } 
+  /* timestamp */
   f_timestamp_past = Firebase.getString("/userlogs/bridgeid/lastlog/timestamp");
   Serial.println(f_timestamp_past);
 
+  /* firebase info push*/
+  Firebase.setString("/devicelog/bridgeid/ssid", ssid );    
+  digitalWrite(D2, HIGH);
+  delay(200);
+  digitalWrite(D2, LOW); 
+  if (Firebase.failed()) {
+    Serial.print("\nFirebase ssid  failed:");
+    Serial.println(Firebase.error()); 
+  
+  }
+
+  writeMAC(0);
+  showMAC();
   
 //  /* time  */
 //  configTime(2 * 3600, 0, "pool.ntp.org", "time.nist.gov");
@@ -274,7 +300,33 @@ void sendFirebase(int index){
     break;
     
   }
-
+  if(isEnroll){
+    if(index == 0 ){
+      message.replace("OPEN", "ENROLL" );
+      Serial.println(message);
+      isEnroll = false;
+    }
+    else if(index == 4){  
+      message.replace("OPEN", "ENROLL" );
+      Serial.println(message);
+      uint8_t blank=0;
+      for(int i =0; i<MAC_max; i++){
+        String n = String(i);
+        String mac = Firebase.getString(path_MAC+n+"/mac");  //+macID   
+        if(mac =="") {
+          for (int j = 0; j < 16; j++) { EEPROM.write(96 + j + (16*i), blank); } // 방금등록된거 삭제
+          Serial.println("delete : "+n);
+          EEPROM.commit();    
+          break;
+        }
+        Serial.println(n+" : "+mac);
+      }
+      showMAC();
+      isEnroll = false;
+    }
+  }
+  
+  
   if(index<19){   
     StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.createObject();
@@ -297,7 +349,6 @@ void sendFirebase(int index){
 }
 
 void checkFirebase(){
-
   f_timestamp_curr= Firebase.getString("/userlogs/bridgeid/lastlog/timestamp");
   if(f_timestamp_curr==""){
 //    Serial.println("return");
@@ -340,25 +391,13 @@ void checkFirebase(){
     
     else if(f_type.substring(0,3) == "ENR"  ){
       Serial.print("send : ");
-      Serial.println(f_type);      
-      uint8_t blank=0;
-      char temp[16] = {0, };
-      digitalWrite(D2, HIGH);      
-      for (int i = 0; i < 16*10; i++) { EEPROM.write(96 + i, blank); }
-      for(int i =0; i<10; i++){
-        String n = String(i);
-        String mac = Firebase.getString(path_MAC+n+"/mac");  //+macID        
-        if(mac =="") 
-          break;
-        Serial.println(n+" : "+mac);                
-        for (int j = 0; j < mac.length(); j++) { EEPROM.write(96 + j + (16*i), mac[j]); }
-        EEPROM.commit();        
-      }
-      for(int i = 0; i < 10; i++){
-        for (int j = 0; j < 16; j++) { temp[j] = (char) EEPROM.read(96+ j + (16*i)); }
-//        Serial.println(temp);
-      }
+      Serial.println(f_type);   
+      digitalWrite(D2, HIGH);
+      writeMAC(1);
+      showMAC();
+      
       if(f_type.substring(4,8) == "SAFE"){
+        isEnroll = true;
         String req = "";
         req = "REQ:S:OPEN,";
         req += f_mac;
@@ -377,7 +416,7 @@ void checkFirebase(){
       uint8_t blank=0;
       digitalWrite(D2, HIGH);
 
-      for(int i = 0; i < 10; i++){
+      for(int i = 0; i < MAC_max; i++){
         for (int j = 0; j < 16; j++) { temp[j] = (char) EEPROM.read(96+ j + (16*i)); }
         if(String(temp) == f_mac){
           Serial.println("DELETE MAC : " + f_mac);
@@ -385,19 +424,51 @@ void checkFirebase(){
           EEPROM.commit();
         }
       }
+      showMAC();
       delay(2000);
       digitalWrite(D2, LOW);
     }
     
   }
 }
+void writeMAC(int index){
+  uint8_t blank=0;
+    for (int i = 0; i < 16*MAC_max; i++) { EEPROM.write(96 + i, blank); }
+    for(int i =0; i<MAC_max; i++){
+      String n = String(i);
+      String mac = Firebase.getString(path_MAC+n+"/mac");  //+macID   
+      if(mac =="") {    // device 0 1 2 추가하고 추가 할 것이 없을때
+        if(index == 1){
+          Serial.println("+" +n+" : "+f_mac);
+          for (int j = 0; j < f_mac.length(); j++) { EEPROM.write(96 + j + (16*i), f_mac[j]); }   //추가할 mac 저장
+        }        
+        break;
+      }
+      Serial.println(n+" : "+mac);                
+      for (int j = 0; j < mac.length(); j++) { EEPROM.write(96 + j + (16*i), mac[j]); }         //device 0, 1, 2 순차적으로 저장
+    }
+    EEPROM.commit();
+}
+void showMAC(){
+  char temp[16] = {0, };
+  Serial.println("===show mac===");
+  for(int i = 0; i < MAC_max; i++){
+    for (int j = 0; j < 16; j++) { temp[j] = (char) EEPROM.read(96+ j + (16*i)); }
+    if(temp[0] != 0)
+    Serial.println(temp);
+  }
+}
 
 WiFiClient time_client;
 String getTime() {
+  String date[10];
+  int dateIndex = 0;
   while (!time_client.connect("google.com", 80)) {}
   time_client.print("HEAD / HTTP/1.1\r\n\r\n");
   while(!time_client.available()) {}
-  
+//  time_t t;
+//  t.setTime(hr,min,sec,day,mnth,yr);
+//        Serial.println(ctime(&now));
   while(time_client.available()){
     if (time_client.read() == '\n') {    
       if (time_client.read() == 'D') {    
@@ -408,6 +479,14 @@ String getTime() {
                 time_client.read();
                 String timeData = time_client.readStringUntil('\r');
                 time_client.stop();
+                timeData = timeData.substring(0, timeData.length()-3);
+//                Serial.println(timeData );
+//                for(int i = 0; i < timeData.length(); i++){
+//                  if(timeData[i] == " "){
+//                    date[dateIndex] = timeData.substring(0, i);
+//                    dateIndex++;
+//                  }
+//                }
                 return timeData;
               }
             }

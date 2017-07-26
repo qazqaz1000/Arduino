@@ -5,7 +5,7 @@
 
 const char *ap_ssid2 = "esp8266";
 const char *ap_pass2 = "12345678";
- WiFiServer server3(3000);
+ WiFiServer server3(2378);
 WiFiClient serverClients[MAX_SRV_CLIENTS];
 IPAddress ip(192, 168, 4, 1);
 IPAddress gateway(192, 168, 4, 1);

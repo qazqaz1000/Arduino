@@ -5,6 +5,7 @@ String text="";
 String text_MAC="";
 bool sendIOT=false;
 int isApp=0;
+//extern bool isEnroll;
 //SoftwareSerial swSerial(14, 12, false, 256); //for serial print
 
 int brBleMsgParse_MAC(String *receive_MAC)
@@ -16,10 +17,10 @@ int brBleMsgParse_MAC(String *receive_MAC)
   static int index_Enter = 0;
   int returnValue=19;
   static int ch=0;
-  const int MAC_max=10;
+  const int MAC_max=20;
   char e_MAC[MAC_max][32] = {0,};
   bool isFail = true;
-
+//  Serial.println(isEnroll);
 //
 //  while(Serial.available()) {
 //    char inchar = Serial.read();    
